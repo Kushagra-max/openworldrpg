@@ -1,35 +1,33 @@
 import pygame
+import os
 import random
+
+pygame.display.set_caption("Open World Test")
 
 TILESIZE = 32
 WIDTH = TILESIZE * 16
 HEIGHT = TILESIZE * 12
 PLAYER_SPEED = 3 * TILESIZE
 
-pygame.init()
-window = pygame.display.set_mode((WIDTH, HEIGHT))
-clock = pygame.time.Clock()
+# Define the camera class
+class Camera:
+    def __init__(self, width, height):
+        self.camera = pygame.Rect(0, 0, width, height)
+        self.width = width
+        self.height = height
 
-tile_images = {
-    '1': pygame.Surface((TILESIZE, TILESIZE)),
-    'P': pygame.Surface((TILESIZE, TILESIZE)),
-    # Add more tile images here as needed
-}
+    def apply(self, entity):
+        return entity.rect.move(self.camera.topleft)
+
+    def update(self, target):
+        x = -target.rect.centerx + int(WIDTH / 2)
+        y = -target.rect.centery + int(HEIGHT / 2)
 
 
-MAP = ["1111111111111111",
-       "1..............1",
-       "1..............P",
-       "1..1111........1",
-       "1..1..1........1",
-       "1..1111........1",
-       "1..............1",
-       "1........11111.1",
-       "1........1...1.1",
-       "1........11111.1",
-       "1..............1",
-       "1111111111111111"]
 
+        self.camera = pygame.Rect(x, y, self.width, self.height)
+
+# Define the player class
 class Player(pygame.sprite.Sprite):
     def __init__(self, x, y):
         super().__init__()
@@ -43,16 +41,17 @@ class Player(pygame.sprite.Sprite):
         self.last_update = pygame.time.get_ticks()
         self.between_tiles = False
         
+        # Load player image
         self.image = pygame.Surface((TILESIZE, TILESIZE))
-        self.image.fill((255, 0, 0))
+        # Load the player sprite image
+        self.image = pygame.image.load("ethan.png").convert_alpha()  # Replace "player_sprite.png" with your sprite file path
         self.rect = self.image.get_rect(topleft = (self.pos.x, self.pos.y))
 
     def update(self, dt, walls):
         self.get_keys()
-        self.rect = self.image.get_rect(topleft = (self.pos.x, self.pos.y))
+        self.rect = self.image.get_rect(topleft=(self.pos.x, self.pos.y))
         
         if self.pos != self.next_pos:
-            
             delta = self.next_pos - self.pos
             if delta.length() > (self.dirvec * PLAYER_SPEED * dt).length():
                 self.pos += self.dirvec * PLAYER_SPEED * dt
@@ -94,47 +93,56 @@ class Player(pygame.sprite.Sprite):
                 current_index = self.rect.centerx // TILESIZE, self.rect.centery // TILESIZE
                 self.last_pos = pygame.math.Vector2(current_index) * TILESIZE
                 self.next_pos = self.last_pos + self.dirvec * TILESIZE
-                
+
+# Define the obstacle class
 class Obstacle(pygame.sprite.Sprite):
     def __init__(self, x, y):
         super().__init__()
         self.image = pygame.Surface((TILESIZE, TILESIZE))
-        self.image.fill((92, 64, 51))
-        self.rect = self.image.get_rect(topleft = (x * TILESIZE, y * TILESIZE))
+        self.image.fill((92, 64, 51))  # Brown obstacle
+        self.rect = self.image.get_rect(topleft=(x * TILESIZE, y * TILESIZE))
 
-# Generate randmap map
-def generate_random_map():
-    new_map = []
-    collison_tiles = 0
-    max_collision_tiles = 5
+# Load map from file
+def load_map(folder, filename):
+    file_path = os.path.join(folder, filename)
+    with open(file_path, 'r') as file:
+        map_data = [line.strip() for line in file.readlines()]
+    return map_data
 
-    # generate map
-    while collison_tiles < max_collision_tiles:
-        new_map = []
-        collison_tiles = 0
+# Initialize Pygame
+pygame.init()
+window = pygame.display.set_mode((WIDTH, HEIGHT))
+clock = pygame.time.Clock()
 
-        for _ in range(12):
-            row = ''.join(random.choice(['.', '.', '.', '.', '1']) for _ in range(16))
-            collison_tiles += row.count('1')
-            new_map.append(row)
-    # Place player randomly in the new map
-    random_row = random.randint(0, 11)
-    random_col = random.randint(0, 15)
-    new_map[random_row] = new_map[random_row][:random_col] + 'P' + new_map[random_row][random_col+1:]
+# Load map files from folder
+maps_folder = "maps"
+map_files = [f for f in os.listdir(maps_folder) if f.endswith(".txt")]
 
-    return new_map
+# Check if map files exist
+if not map_files:
+    print("Error: No map files found in the 'maps' folder.")
+    pygame.quit()
+    exit()
 
+# Randomly choose a map file
+random_map_file = random.choice(map_files)
+print(f"Loading map file: {random_map_file}")
+try:
+    MAP = load_map(maps_folder, random_map_file)
+    print("Map loaded successfully.")
+except Exception as e:
+    print(f"Error loading map file '{random_map_file}': {e}")
+    pygame.quit()
+    exit()
 
-MAP = generate_random_map()
+# Initialize camera
+camera = Camera(WIDTH, HEIGHT)
 
-
-
-#pygame.init()
-#window = pygame.display.set_mode((WIDTH, HEIGHT))
-#clock = pygame.time.Clock()
-
+# Create sprite groups
 all_sprites = pygame.sprite.Group()
 walls = pygame.sprite.Group()
+
+# Create sprites from map data
 for row, tiles in enumerate(MAP):
     for col, tile in enumerate(tiles):
         if tile == "1":
@@ -145,7 +153,7 @@ for row, tiles in enumerate(MAP):
             player = Player(col, row)
             all_sprites.add(player)
 
-# key presses and stuff           
+# Main game loop
 run = True
 while run :
     dt = clock.tick(60) / 1000
@@ -153,40 +161,26 @@ while run :
         if event.type == pygame.QUIT:
             run = False
 
-
+    # Update player
     player.update(dt, walls)
 
-    # Check boundary touch
-    if player.rect.left < 0 or player.rect.right > WIDTH or player.rect.top < 0 or player.rect.bottom > HEIGHT:
-        # Generate a new random map
-        MAP = generate_random_map()
-        # Clear existing sprites
-        all_sprites.empty()
-        walls.empty()
-        # Create new sprites for the new map
-        for row, tiles in enumerate(MAP):
-            for col, tile in enumerate(tiles):
-                if tile == "1":
-                    obstacle = Obstacle(col, row)
-                    walls.add(obstacle)
-                    all_sprites.add(obstacle)
-                elif tile == "P":
-                    player = Player(col, row)
-                    all_sprites.add(player)
-    
+    # Update camera position to follow player
+    camera.update(player)
+
+    # Render game objects with camera offset
     window.fill((124, 252, 0))
 
-    for x in range (0, window.get_width(), TILESIZE):
-        pygame.draw.line(window, (127, 127, 127), (x, 0), (x, window.get_height()))
-    for y in range (0, window.get_height(), TILESIZE):
-        pygame.draw.line(window, (127, 127, 127), (0, y), (window.get_width(), y))
+    # Draw grid lines
+    #for x in range(0, window.get_width(), TILESIZE):
+     #   pygame.draw.line(window, (127, 127, 127), (x - camera.camera.x, 0), (x - camera.camera.x, window.get_height()))
+    #for y in range(0, window.get_height(), TILESIZE):
+     #   pygame.draw.line(window, (127, 127, 127), (0, y - camera.camera.y), (window.get_width(), y - camera.camera.y))
 
-    walls.draw(window)
+    # Apply camera offset to sprites
     for sprite in all_sprites:
-        window.blit(sprite.image, sprite.rect)
-
+        window.blit(sprite.image, camera.apply(sprite))
 
     pygame.display.flip()
-    
+
 pygame.quit()
 exit()
